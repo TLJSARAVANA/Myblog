@@ -1,0 +1,130 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Writing Assistant Bot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl">
+    <h1 class="text-2xl font-bold mb-4 text-center">AI Writing Assistant</h1>
+    <input type="text" id="topic" placeholder="Enter topic" class="mb-2 p-2 w-full border rounded-md">
+    <input type="text" id="keywords" placeholder="Enter keywords" class="mb-2 p-2 w-full border rounded-md">
+    <input type="number" id="wordCount" placeholder="Word count" value="200" class="mb-2 p-2 w-full border rounded-md">
+    <select id="tone" class="mb-4 p-2 w-full border rounded-md">
+      <option value="professional">Professional</option>
+      <option value="casual">Casual</option>
+      <option value="engaging">Engaging</option>
+    </select>
+    <button onclick="generateContent()" class="w-full bg-blue-500 text-white p-2 rounded-md mb-2">Generate Content</button>
+    <button onclick="adjustTone()" class="w-full bg-green-500 text-white p-2 rounded-md mb-2">Adjust Tone</button>
+    <button onclick="exportContent()" class="w-full bg-purple-500 text-white p-2 rounded-md">Export as Text</button>
+    <div id="output" class="mt-4 p-4 bg-gray-50 border rounded-md h-64 overflow-y-auto"></div>
+  </div>
+  <script>
+    const API_TOKEN = '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'; // Replace with your Hugging Face API key
+    const API_URL = 'https://api-inference.huggingface.co/models/gpt2';
+
+    async function generateContent() {
+      const topic = document.getElementById('topic').value;
+      const keywords = document.getElementById('keywords').value;
+      const wordCount = document.getElementById('wordCount').value;
+      const tone = document.getElementById('tone').value;
+      const prompt = `Write a ${wordCount}-word ${tone} article on "${topic}" using keywords: ${keywords}.`;
+      document.getElementById('output').innerHTML = 'Generating...';
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${API_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ inputs: prompt, parameters: { max_length: parseInt(wordCount) + 50 } })
+        });
+        const data = await response.json();
+        const generatedText = data[0]?.generated_text || 'Error generating content.';
+        document.getElementById('output').innerHTML = `<pre class="whitespace-pre-wrap">${generatedText}</pre>`;
+      } catch (error) {
+        document.getElementById('output').innerHTML = 'Error: Could not generate content.';
+      }
+    }
+
+    async function adjustTone() {
+      const currentText = document.getElementById('output').textContent;
+      const newTone = document.getElementById('tone').value;
+      if (!currentText || currentText === 'Generating...') return;
+
+      const prompt = `Rewrite this text in a ${newTone} tone: "${currentText}"`;
+      document.getElementById('output').innerHTML = 'Adjusting tone...';
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${API_TOKEN}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ inputs: prompt, parameters: { max_length: 500 } })
+        });
+        const data = await response.json();
+        const adjustedText = data[0]?.generated_text || 'Error adjusting tone.';
+        document.getElementById('output').innerHTML = `<pre class="whitespace-pre-wrap">${adjustedText}</pre>`;
+      } catch (error) {
+        document.getElementById('output').innerHTML = 'Error: Could not adjust tone.';
+      }
+    }
+
+    function exportContent() {
+      const text = document.getElementById('output').textContent;
+      if (!text || text === 'Generating...') return;
+
+      const blob = new Blob([text], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'generated_content.txt';
+      link.click();
+    }
+  </script>
+</body>
+</html>
